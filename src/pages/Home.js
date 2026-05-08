@@ -1,9 +1,55 @@
 import React, { useState, useEffect } from 'react';
 import UploadSection from '../components/New folder/UploadSection';
 import ConfigPanel from '../components/New folder/ConfigPanel';
+import NewsCardGrid from '../components/New folder/NewsCardGrid';
 import { imageToHeadline, videoToHeadline } from '../services/api';
 
-const Home = ({ mediaMode, mediaPreview, mediaFile, handleMedia, history, addToHistory, language }) => {
+// Resize image and convert to base64 for localStorage storage
+const resizeAndEncode = (file) =>
+  new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const MAX = 400;
+      const scale = Math.min(1, MAX / img.width);
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', 0.75));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+    img.src = url;
+  });
+
+// Extract thumbnail frame from video file (at 1.5s)
+const videoToThumbnail = (file) =>
+  new Promise((resolve) => {
+    const video = document.createElement('video');
+    const url = URL.createObjectURL(file);
+    video.src = url;
+    video.muted = true;
+    video.playsInline = true;
+    video.currentTime = 1.5;
+    video.onloadeddata = () => {
+      video.onseeked = () => {
+        const MAX = 400;
+        const scale = Math.min(1, MAX / video.videoWidth);
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth * scale;
+        canvas.height = video.videoHeight * scale;
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL('image/jpeg', 0.75));
+      };
+      video.currentTime = 1.5;
+    };
+    video.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+    video.load();
+  });
+
+const Home = ({ mediaMode, mediaPreview, mediaFile, handleMedia, history, addToHistory, language, newsCards, addNewsCard }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [headlineData, setHeadlineData] = useState(null);
   const [currentHeadline, setCurrentHeadline] = useState(
@@ -50,6 +96,12 @@ const Home = ({ mediaMode, mediaPreview, mediaFile, handleMedia, history, addToH
         setCurrentHeadline(response.data.headline);
         addToHistory(response.data.headline, selectedTone);
         setShowMedia(true);
+
+        // Save news card with image or video thumbnail
+        const imageBase64 = mediaFile
+          ? (mediaMode === 'video' ? await videoToThumbnail(mediaFile) : await resizeAndEncode(mediaFile))
+          : null;
+        addNewsCard(response.data.headline, response.data.category, selectedTone, imageBase64, mediaMode);
       } else {
         console.error('API error:', response.error);
       }
@@ -67,7 +119,7 @@ const Home = ({ mediaMode, mediaPreview, mediaFile, handleMedia, history, addToH
       <main className={`p-6 md:p-10 flex flex-col xl:flex-row gap-8 max-w-[1700px] mx-auto ${isUrdu ? 'flex-row-reverse' : ''}`}>
       
       {/* LEFT: STUDIO CONTROLS */}
-      <aside className="w-full xl:w-[400px]">
+      <aside className="w-full xl:w-[400px] xl:self-start">
         <div className="bg-[#0d1b2a] border border-cyan-500/20 p-8 shadow-2xl rounded-br-[3rem]">
           <h2 className={`text-xs font-black uppercase tracking-[0.3em] mb-8 text-cyan-400 ${isUrdu ? 'text-right' : ''}`}>
             {isUrdu ? 'کنٹرول پینل' : 'Broadcast Center'}
@@ -92,9 +144,10 @@ const Home = ({ mediaMode, mediaPreview, mediaFile, handleMedia, history, addToH
         </div>
       </aside>
 
-      {/* MIDDLE: THE BROADCAST CANVAS (The Real Deal) */}
-      <section className="flex-1">
-        <div className="relative h-full min-h-[500px] bg-[#0a2347] border-4 border-[#1a4d6d] overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)]">
+      {/* MIDDLE: BROADCAST CANVAS + CARDS BELOW */}
+      <div className="flex-1 flex flex-col gap-4">
+      <section>
+        <div className="relative h-[calc(100vh-160px)] bg-[#0a2347] border-4 border-[#1a4d6d] overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)]">
           
           {/* World Map Background Pattern */}
           <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] z-0"></div>
@@ -175,7 +228,13 @@ const Home = ({ mediaMode, mediaPreview, mediaFile, handleMedia, history, addToH
         </div>
       </section>
 
-      {/* RIGHT: EDITORIAL QUEUE */}
+      {/* NEWS CARDS GRID — below canvas */}
+      <NewsCardGrid newsCards={newsCards} />
+
+      </div>
+
+      {/* RIGHT: EDITORIAL QUEUE - TEMPORARILY COMMENTED OUT */}
+      {/*
       <aside className="w-full xl:w-[320px]">
         <div className="bg-[#0d1b2a]/80 backdrop-blur-md border border-cyan-500/20 p-6 h-full shadow-2xl">
           <div className="flex items-center justify-between mb-6">
@@ -201,6 +260,7 @@ const Home = ({ mediaMode, mediaPreview, mediaFile, handleMedia, history, addToH
           </div>
         </div>
       </aside>
+      */}
     </main>
 
     </>
